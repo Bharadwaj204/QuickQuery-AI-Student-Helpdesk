@@ -1,5 +1,4 @@
-# Create the final deployment-ready Streamlit app that uses the advanced agent
-final_streamlit_app = '''import streamlit as st
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -448,46 +447,3 @@ st.markdown("""
     </details>
 </div>
 """, unsafe_allow_html=True)
-'''
-
-# Save the final enhanced app
-with open('quickquery_final_app.py', 'w', encoding='utf-8') as f:
-    f.write(final_streamlit_app)
-
-# Create final requirements file
-final_requirements = """streamlit>=1.28.0
-openai>=0.28.0
-pandas>=2.0.0
-plotly>=5.15.0
-python-dotenv>=1.0.0
-requests>=2.31.0
-numpy>=1.24.0
-"""
-
-with open('final_requirements.txt', 'w') as f:
-    f.write(final_requirements)
-
-print("✅ COMPLETE ENHANCED PROJECT READY!")
-print("📁 Files created:")
-print("  - quickquery_final_app.py (main Streamlit app)")
-print("  - advanced_agent.py (AI agent implementation)")
-print("  - final_requirements.txt (dependencies)")
-print("  - config.py (configuration management)")
-print("  - .env.template (environment setup)")
-print()
-print("🚀 FEATURES INCLUDED:")
-print("  ✅ Real OpenAI API integration with GPT-3.5/4")
-print("  ✅ Advanced query classification with confidence")
-print("  ✅ Interactive analytics dashboard")
-print("  ✅ Professional UI with custom styling")
-print("  ✅ Cost tracking and usage monitoring")
-print("  ✅ Conversation context awareness")
-print("  ✅ Mobile-responsive design")
-print("  ✅ Data export capabilities")
-print("  ✅ Error handling and fallbacks")
-print("  ✅ Production-ready code structure")
-print()
-print("🌐 DEPLOYMENT READY:")
-print("  - Streamlit Cloud: Use quickquery_final_app.py")
-print("  - Heroku/Railway: All files included")
-print("  - Local development: python -m streamlit run quickquery_final_app.py")

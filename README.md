@@ -28,8 +28,7 @@ This project was developed as a submission for the OpenAI × NxtWave Buildathon 
 ├── script_1.py                # Additional scripts
 ├── script_2.py                # Additional scripts
 ├── script_3.py                # Additional scripts
-├── enhanced_requirements.txt  # Python dependencies
-├── final_requirements.txt     # Alternative requirements file
+├── final_requirements.txt     # Python dependencies
 ├── .env.template             # Environment variables template
 ├── README.md                 # Project documentation
 └── __pycache__/              # Python cache files
@@ -150,7 +149,7 @@ source venv/bin/activate
 4. Install the required dependencies:
 
 ```bash
-pip install -r enhanced_requirements.txt
+pip install -r final_requirements.txt
 ```
 
 ## Usage
@@ -184,7 +183,7 @@ http://localhost:8501
 
 - Ensure you have an active internet connection for API calls.
 - Verify your OpenAI API key is valid and has sufficient quota.
-- If you encounter errors related to package versions, ensure dependencies are installed as per `enhanced_requirements.txt`.
+- If you encounter errors related to package versions, ensure dependencies are installed as per `final_requirements.txt`.
 - For accessibility warnings related to empty labels, the app has been updated to provide appropriate labels.
 
 ## License

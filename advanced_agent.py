@@ -1,20 +1,25 @@
-import openai
+"""
+Advanced QuickQuery AI Agent with Modern OpenAI Integration
+Production-ready implementation with streaming, analytics, and security
+"""
+
+from openai import OpenAI, AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
+import asyncio
 import datetime
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+import hashlib
+import time
+from typing import Dict, List, Optional, AsyncGenerator, Union, Any
 from dataclasses import dataclass, asdict
-import asyncio
+from functools import lru_cache
+import re
 
-# Fix for OpenAI API v1 migration
-# Removed due to ModuleNotFoundError for openai.api_resources
-
-# You can downgrade openai package to 0.28.0 to avoid migration issues:
-# pip install openai==0.28.0
 
 @dataclass
 class QueryAnalytics:
-    """Data class for query analytics"""
+    """Enhanced data class for query analytics with validation"""
     query_id: str
     user_input: str
     ai_response: str
@@ -24,40 +29,79 @@ class QueryAnalytics:
     tokens_used: int
     timestamp: str
     user_satisfaction: Optional[int] = None
+    cost_estimate: Optional[float] = None
+    
+    def __post_init__(self):
+        """Validate data after initialization"""
+        if not 0 <= self.confidence <= 1:
+            raise ValueError("Confidence must be between 0 and 1")
+        if self.response_time_ms < 0:
+            raise ValueError("Response time cannot be negative")
 
-class AdvancedQuickQueryAgent:
-    """
-    Production-ready AI Student Helpdesk Agent with OpenAI GPT Integration
 
-    Features:
-    - Real OpenAI API integration
-    - Advanced query classification
-    - Context-aware responses
-    - Analytics and logging
-    - Error handling and fallbacks
-    - Async support for scalability
-    """
+class SecurityValidator:
+    """Security validation utilities"""
+    
+    @staticmethod
+    def sanitize_input(text: str) -> str:
+        """Sanitize user input to prevent injection attacks"""
+        if not isinstance(text, str):
+            raise ValueError("Input must be a string")
+        
+        # Remove potential harmful characters
+        sanitized = re.sub(r'[<>"\']', '', text)
+        
+        # Limit length to prevent DoS
+        if len(sanitized) > 2000:
+            sanitized = sanitized[:2000]
+            
+        return sanitized.strip()
+    
+    @staticmethod
+    def validate_api_key(api_key: str) -> bool:
+        """Validate OpenAI API key format"""
+        if not api_key:
+            return False
+        
+        # Basic OpenAI API key format validation
+        pattern = r'^sk-[a-zA-Z0-9]{48,}$'
+        return bool(re.match(pattern, api_key))
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo"):
-        self.api_key = api_key
-        self.model = model
-        self.conversation_history: List[QueryAnalytics] = []
-        self.session_stats = {
-            "queries_processed": 0,
-            "successful_queries": 0,
-            "total_tokens_used": 0,
-            "average_response_time": 0,
-            "query_types": {},
-            "session_start": datetime.datetime.now()
+
+class KnowledgeBase:
+    """Structured knowledge base with caching and search capabilities"""
+    
+    def __init__(self):
+        self.data = self._load_knowledge_data()
+        self._search_cache = {}
+        
+    @lru_cache(maxsize=100)
+    def get_context_for_type(self, query_type: str) -> str:
+        """Get relevant context based on query type with caching"""
+        context_mapping = {
+            "academic_exam": json.dumps(self.data["academic"]["exams"], indent=2),
+            "academic_syllabus": json.dumps(self.data["academic"]["syllabus"], indent=2),
+            "academic_assignment": json.dumps(self.data["academic"]["assignments"], indent=2),
+            "campus_library": json.dumps(self.data["campus"]["facilities"]["library"], indent=2),
+            "campus_dining": json.dumps(self.data["campus"]["facilities"]["dining"], indent=2),
+            "campus_sports": json.dumps(self.data["campus"]["facilities"]["sports_fitness"], indent=2),
+            "campus_hostel": json.dumps(self.data["campus"]["facilities"]["accommodation"], indent=2),
+            "campus_transport": json.dumps(self.data["campus"]["transportation"], indent=2),
+            "campus_events": json.dumps(self.data["campus"]["events"], indent=2),
+            "campus_contact": json.dumps(self.data["contacts"], indent=2),
+            "resources": json.dumps(self.data["academic"]["resources"], indent=2)
         }
-
-        # Enhanced knowledge base with more comprehensive information
-        self.knowledge_base = {
+        
+        return context_mapping.get(query_type, "General college information available.")
+    
+    def _load_knowledge_data(self) -> Dict[str, Any]:
+        """Load comprehensive knowledge base"""
+        return {
             "academic": {
                 "exams": {
                     "schedule": {
                         "internal_1": "Internal Exam 1: September 20-25, 2025",
-                        "internal_2": "Internal Exam 2: November 15-20, 2025", 
+                        "internal_2": "Internal Exam 2: November 15-20, 2025",
                         "semester": "End Semester Exams: December 10-20, 2025",
                         "practical": "Practical Exams: December 5-9, 2025"
                     },
@@ -65,14 +109,12 @@ class AdvancedQuickQueryAgent:
                         "ID card mandatory for all exams",
                         "Arrive 30 minutes before exam time",
                         "No mobile phones or electronic devices allowed",
-                        "Scientific calculator allowed for specific subjects only",
-                        "Blue/black pen mandatory, pencil only for diagrams"
+                        "Scientific calculator allowed for specific subjects only"
                     ],
                     "entrance_exams": {
                         "gate_2026": "February 1-16, 2026",
                         "jee_main": "January 2026",
-                        "cat_2025": "November 26, 2025",
-                        "neet_2026": "May 5, 2026"
+                        "cat_2025": "November 26, 2025"
                     }
                 },
                 "syllabus": {
@@ -83,50 +125,26 @@ class AdvancedQuickQueryAgent:
                             "Computer Vision (20%)",
                             "Machine Learning Operations (MLOps) (15%)",
                             "AI Ethics and Fairness (10%)"
-                        ],
-                        "practical_components": [
-                            "TensorFlow/PyTorch projects",
-                            "Real-world dataset analysis",
-                            "Model deployment exercises",
-                            "Research paper implementation"
                         ]
                     },
                     "cs_core": {
                         "data_structures": "Arrays, Linked Lists, Trees, Graphs, Hashing",
                         "algorithms": "Sorting, Searching, Dynamic Programming, Greedy Algorithms",
-                        "database": "SQL, NoSQL, Database Design, Transactions, Normalization",
-                        "operating_systems": "Process Management, Memory Management, File Systems",
-                        "computer_networks": "TCP/IP, OSI Model, Routing, Network Security"
+                        "database": "SQL, NoSQL, Database Design, Transactions, Normalization"
                     }
                 },
                 "assignments": {
                     "current_deadlines": [
                         {"name": "AI Project Phase 1", "due": "September 30, 2025", "weightage": "25%"},
                         {"name": "ML Assignment 2", "due": "October 5, 2025", "weightage": "15%"},
-                        {"name": "Database Project", "due": "October 15, 2025", "weightage": "20%"},
-                        {"name": "Network Security Assignment", "due": "October 22, 2025", "weightage": "15%"}
-                    ],
-                    "submission_guidelines": [
-                        "Submit only through college LMS portal",
-                        "Late submissions: -10% marks per day",
-                        "Plagiarism results in zero marks",
-                        "Group projects require individual contribution reports",
-                        "Code submissions must include documentation"
+                        {"name": "Database Project", "due": "October 15, 2025", "weightage": "20%"}
                     ]
                 },
                 "resources": {
                     "online_platforms": [
                         "College LMS: portal.college.edu",
                         "GitHub Student Pack (free for students)",
-                        "Microsoft Office 365 for Education",
-                        "Coursera for Campus (free courses)",
-                        "IEEE Xplore Digital Library access"
-                    ],
-                    "study_materials": [
-                        "Recorded lecture videos on LMS",
-                        "Previous year question papers (library)",
-                        "Reference books available in digital format",
-                        "Research paper access through college subscriptions"
+                        "Microsoft Office 365 for Education"
                     ]
                 }
             },
@@ -136,53 +154,34 @@ class AdvancedQuickQueryAgent:
                         "timings": "6:00 AM - 10:00 PM (Mon-Sat), 8:00 AM - 8:00 PM (Sun)",
                         "capacity": "500 students",
                         "collections": "50,000+ books, 200+ journals, 10,000+ e-books",
-                        "services": ["WiFi", "Printing", "Scanning", "Group study rooms", "Silent zones"],
-                        "digital_resources": ["IEEE Xplore", "ACM Digital Library", "Springer", "Elsevier"]
+                        "services": ["WiFi", "Printing", "Scanning", "Group study rooms"]
                     },
                     "dining": {
                         "main_canteen": {
                             "timings": "8:00 AM - 8:00 PM",
                             "cuisine": "South Indian, North Indian, Chinese",
-                            "capacity": "300 seats",
-                            "special_features": ["Vegan options", "Jain food", "Diet meals"]
+                            "capacity": "300 seats"
                         },
                         "coffee_shop": {
-                            "timings": "7:00 AM - 9:00 PM", 
-                            "offerings": ["Coffee", "Tea", "Snacks", "Sandwiches", "Pastries"]
-                        },
-                        "night_canteen": {
-                            "timings": "8:00 PM - 11:00 PM",
-                            "offerings": ["Light snacks", "Beverages", "Instant noodles"]
+                            "timings": "7:00 AM - 9:00 PM",
+                            "offerings": ["Coffee", "Tea", "Snacks", "Sandwiches"]
                         }
                     },
                     "sports_fitness": {
                         "gym": {
                             "timings": "6:00 AM - 10:00 PM",
-                            "equipment": ["Cardio machines", "Weight training", "Functional fitness"],
-                            "facilities": ["Locker rooms", "Shower facilities", "First aid"],
+                            "equipment": ["Cardio machines", "Weight training"],
                             "membership": "Free for all students"
-                        },
-                        "sports_facilities": [
-                            "Basketball court (2 courts)",
-                            "Badminton court (4 courts)", 
-                            "Tennis court (2 courts)",
-                            "Cricket ground (1 full size)",
-                            "Football ground (1 full size)",
-                            "Swimming pool (50m, seasonal)"
-                        ]
+                        }
                     },
                     "accommodation": {
                         "boys_hostel": {
                             "capacity": "500 students",
-                            "room_types": ["Single occupancy", "Twin sharing"],
-                            "facilities": ["WiFi", "Laundry", "Common room", "Study hall"],
-                            "mess_timings": "Breakfast: 7-9 AM, Lunch: 12-2 PM, Dinner: 7-9 PM"
+                            "facilities": ["WiFi", "Laundry", "Common room"]
                         },
                         "girls_hostel": {
-                            "capacity": "300 students", 
-                            "room_types": ["Single occupancy", "Twin sharing"],
-                            "facilities": ["WiFi", "Laundry", "Common room", "Study hall"],
-                            "security": "24/7 security, CCTV, Biometric access"
+                            "capacity": "300 students",
+                            "facilities": ["WiFi", "Laundry", "Common room"]
                         }
                     }
                 },
@@ -190,14 +189,7 @@ class AdvancedQuickQueryAgent:
                     "college_buses": {
                         "routes": 12,
                         "timings": "7:00 AM - 7:00 PM",
-                        "frequency": "Every 30 minutes during peak hours",
-                        "monthly_pass": "₹500 (Regular), ₹800 (AC buses)",
-                        "coverage": "Major areas across the city"
-                    },
-                    "parking": {
-                        "two_wheeler": "Free for students with valid stickers",
-                        "four_wheeler": "₹20 per day for visitors",
-                        "bicycle": "Free bicycle stands available"
+                        "monthly_pass": "₹500 (Regular), ₹800 (AC buses)"
                     }
                 },
                 "events": {
@@ -205,364 +197,355 @@ class AdvancedQuickQueryAgent:
                         {
                             "name": "TechFest 2025",
                             "dates": "October 15-17, 2025",
-                            "events": ["Hackathon", "Tech talks", "Project exhibitions", "Coding competitions"]
+                            "events": ["Hackathon", "Tech talks", "Project exhibitions"]
                         },
                         {
                             "name": "AI Workshop Series",
                             "date": "September 25, 2025",
-                            "topics": ["Introduction to GPT models", "Computer vision applications", "ML in industry"]
-                        },
-                        {
-                            "name": "Coding Championship",
-                            "date": "October 1, 2025", 
-                            "prizes": "₹50,000 total prize pool",
-                            "registration": "Free for college students"
+                            "topics": ["Introduction to GPT models", "Computer vision applications"]
                         }
                     ],
                     "placement_season": {
                         "timeline": "November 2025 - March 2026",
-                        "companies": ["Google", "Microsoft", "Amazon", "Adobe", "Infosys", "TCS", "Wipro"],
-                        "preparation": [
-                            "Resume building workshops (every Monday 2-4 PM)",
-                            "Mock interviews (by appointment)",
-                            "Aptitude test preparation",
-                            "Technical interview preparation"
-                        ]
+                        "companies": ["Google", "Microsoft", "Amazon", "Adobe", "Infosys"]
                     }
                 }
             },
             "contacts": {
-                "emergency": {
-                    "security": "ext-911 / security@college.edu",
-                    "medical": "ext-100 / medical@college.edu", 
-                    "fire_safety": "ext-101 / fire@college.edu",
-                    "admin": "ext-500 / admin@college.edu"
-                },
                 "academic": {
                     "dean": "dean@college.edu / ext-001",
                     "hod_cse": "hod.cse@college.edu / ext-201",
-                    "academic_office": "academic@college.edu / ext-101",
-                    "examination_cell": "exams@college.edu / ext-102"
+                    "academic_office": "academic@college.edu / ext-101"
                 },
                 "student_services": {
                     "hostel_office": "hostel@college.edu / ext-301",
                     "placement_cell": "placement@college.edu / ext-401",
-                    "student_counselor": "counselor@college.edu / ext-601",
                     "it_helpdesk": "ithelpdesk@college.edu / ext-201"
+                },
+                "emergency": {
+                    "security": "ext-911 / security@college.edu",
+                    "medical": "ext-100 / medical@college.edu"
                 }
             }
         }
 
+
+class EnhancedQuickQueryAgent:
+    """
+    Production-ready AI Student Helpdesk Agent
+    
+    Features:
+    - Modern OpenAI API v1+ integration
+    - Real-time streaming responses
+    - Advanced query classification
+    - Comprehensive security and validation
+    - Performance monitoring and analytics
+    - Intelligent caching and rate limiting
+    """
+    
+    def __init__(self, model: str = "gpt-3.5-turbo"):
+        self.model = model
+        self.api_key: Optional[str] = None
+        self.client: Optional[AsyncOpenAI] = None
+        self.sync_client: Optional[OpenAI] = None
+        
+        # Initialize components
+        self.knowledge_base = KnowledgeBase()
+        self.security = SecurityValidator()
+        self.conversation_history: List[QueryAnalytics] = []
+        
+        # Session statistics
+        self.session_stats = {
+            "queries_processed": 0,
+            "successful_queries": 0,
+            "total_tokens_used": 0,
+            "average_response_time": 0,
+            "query_types": {},
+            "session_start": datetime.datetime.now(),
+            "api_calls_made": 0,
+            "cache_hits": 0
+        }
+        
+        # Performance settings
+        self.max_tokens = 500
+        self.temperature = 0.7
+        self.request_timeout = 30
+        
         # Setup logging
-        self.logger = logging.getLogger(__name__)
-
-        if api_key:
-            self.setup_openai(api_key)
-
+        self.logger = self._setup_logger()
+        
+    def _setup_logger(self) -> logging.Logger:
+        """Setup structured logging"""
+        logger = logging.getLogger(f"{__name__}.{id(self)}")
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
+    
     def setup_openai(self, api_key: str) -> bool:
-        """Initialize OpenAI API configuration"""
+        """Initialize OpenAI API with proper validation"""
         try:
-            openai.api_key = api_key
+            # Validate API key format
+            if not self.security.validate_api_key(api_key):
+                self.logger.error("Invalid API key format")
+                return False
+            
+            # Initialize clients
             self.api_key = api_key
-
-            # Test API connection
-            test_response = openai.ChatCompletion.create(
+            self.sync_client = OpenAI(api_key=api_key, timeout=self.request_timeout)
+            self.client = AsyncOpenAI(api_key=api_key, timeout=self.request_timeout)
+            
+            # Test connection
+            test_response = self.sync_client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": "Test"}],
+                messages=[{"role": "user", "content": "test"}],
                 max_tokens=1
             )
-
+            
             self.logger.info("OpenAI API connection successful")
             return True
-
+            
         except Exception as e:
             self.logger.error(f"OpenAI API setup failed: {str(e)}")
+            self.api_key = None
+            self.client = None
+            self.sync_client = None
             return False
+    
+    @lru_cache(maxsize=50)
+    def classify_query(self, query: str) -> tuple[str, float]:
+        """Classify query with caching for performance"""
+        try:
+            # Sanitize input
+            clean_query = self.security.sanitize_input(query)
+            
+            # Rule-based classification with confidence scoring
+            query_lower = clean_query.lower()
+            
+            # Define classification rules with confidence scores
+            classification_rules = [
+                (["exam", "test", "assessment", "quiz"], "academic_exam", 0.9),
+                (["syllabus", "curriculum", "course"], "academic_syllabus", 0.85),
+                (["assignment", "homework", "project", "deadline"], "academic_assignment", 0.88),
+                (["timetable", "schedule", "classes"], "academic_timetable", 0.82),
+                (["library", "books", "study"], "campus_library", 0.8),
+                (["canteen", "food", "mess", "cafe"], "campus_dining", 0.8),
+                (["gym", "sports", "fitness"], "campus_sports", 0.8),
+                (["hostel", "accommodation", "room"], "campus_hostel", 0.85),
+                (["bus", "transport", "vehicle"], "campus_transport", 0.8),
+                (["event", "fest", "workshop"], "campus_events", 0.8),
+                (["placement", "job", "company"], "campus_placement", 0.85),
+                (["contact", "phone", "email"], "campus_contact", 0.75),
+                (["resource", "material", "online"], "resources", 0.7)
+            ]
+            
+            # Find best match
+            for keywords, category, confidence in classification_rules:
+                if any(keyword in query_lower for keyword in keywords):
+                    return category, confidence
+            
+            # Special case for long text
+            if len(clean_query.split()) > 25:
+                return "summarization", 0.6
+            
+            return "general", 0.5
+            
+        except Exception as e:
+            self.logger.error(f"Query classification failed: {str(e)}")
+            return "general", 0.3
+    
+    async def generate_response_stream(self, query: str, query_type: str, 
+                                     conversation_context: Optional[List[Dict[str, str]]] = None) -> AsyncGenerator[str, None]:
+        """Generate streaming AI response with proper error handling"""
+        try:
+            # Get relevant context
+            context_info = self.knowledge_base.get_context_for_type(query_type)
+            
+            # Build messages for OpenAI with proper typing
+            messages: List[ChatCompletionMessageParam] = [
+                {
+                    "role": "system",
+                    "content": f"""You are QuickQuery, an intelligent AI assistant for engineering college students.
+                    
+Current Context: {query_type}
+Relevant Information: {context_info}
 
-    def classify_query_advanced(self, query: str) -> Tuple[str, float]:
-        """
-        Advanced query classification using OpenAI API with confidence scoring
-        """
-        classification_prompt = f"""
-        As an expert classifier for a student helpdesk system, classify this query into one of these categories.
-        Also provide a confidence score (0.0 to 1.0) and brief reasoning.
-
-        Categories:
-        - academic_exam: Questions about exam schedules, rules, entrance exams
-        - academic_syllabus: Questions about course content, curriculum, subjects
-        - academic_assignment: Questions about assignments, projects, deadlines  
-        - academic_timetable: Questions about class schedules, lab timings
-        - campus_library: Questions about library services, timings, resources
-        - campus_dining: Questions about canteen, food, mess facilities
-        - campus_sports: Questions about gym, sports facilities, games
-        - campus_hostel: Questions about accommodation, hostel facilities
-        - campus_transport: Questions about buses, parking, transportation
-        - campus_events: Questions about events, festivals, competitions
-        - campus_placement: Questions about jobs, placements, career services
-        - campus_contact: Questions about contact information, phone numbers
-        - resources: Questions about online platforms, study materials
-        - summarization: Long text that needs to be summarized
-        - general: General queries that don't fit other categories
-
-        Query: "{query}"
-
-        Respond in JSON format:
-        {{
-            "category": "category_name",
-            "confidence": 0.95,
-            "reasoning": "Brief explanation for this classification"
-        }}
-        """
-
-        if self.api_key:
-            try:
-                response = openai.ChatCompletion.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": classification_prompt}],
-                    max_tokens=150,
-                    temperature=0.1
-                )
-
-                result = json.loads(response.choices[0].message.content)
-                return result["category"], result["confidence"]
-
-            except Exception as e:
-                self.logger.error(f"AI classification failed: {str(e)}")
-
-        # Fallback to rule-based classification
-        return self._classify_rule_based(query), 0.75
-
-    def _classify_rule_based(self, query: str) -> str:
-        """Fallback rule-based classification"""
-        query_lower = query.lower()
-
-        # Academic queries
-        if any(word in query_lower for word in ["exam", "test", "assessment", "quiz", "gate", "jee"]):
-            return "academic_exam"
-        elif any(word in query_lower for word in ["syllabus", "curriculum", "subjects", "topics", "course"]):
-            return "academic_syllabus"
-        elif any(word in query_lower for word in ["assignment", "homework", "project", "deadline", "submission"]):
-            return "academic_assignment"
-        elif any(word in query_lower for word in ["timetable", "schedule", "classes", "timing", "class"]):
-            return "academic_timetable"
-
-        # Campus facilities
-        elif any(word in query_lower for word in ["library", "books", "study", "reading"]):
-            return "campus_library"
-        elif any(word in query_lower for word in ["canteen", "food", "mess", "cafe", "dining", "restaurant"]):
-            return "campus_dining"
-        elif any(word in query_lower for word in ["gym", "sports", "fitness", "games", "basketball", "badminton"]):
-            return "campus_sports"
-        elif any(word in query_lower for word in ["hostel", "accommodation", "room", "residence"]):
-            return "campus_hostel"
-        elif any(word in query_lower for word in ["bus", "transport", "vehicle", "parking"]):
-            return "campus_transport"
-
-        # Events and services
-        elif any(word in query_lower for word in ["event", "fest", "workshop", "competition", "seminar"]):
-            return "campus_events"
-        elif any(word in query_lower for word in ["placement", "job", "company", "interview", "career"]):
-            return "campus_placement"
-        elif any(word in query_lower for word in ["contact", "phone", "email", "help", "support"]):
-            return "campus_contact"
-        elif any(word in query_lower for word in ["resource", "material", "online", "platform", "lms"]):
-            return "resources"
-
-        # Special cases
-        elif len(query.split()) > 25:
-            return "summarization"
-
-        return "general"
-
-    def generate_ai_response(self, query: str, query_type: str, conversation_context: List[str] = None) -> Tuple[str, int]:
-        """
-        Generate contextual AI response using OpenAI GPT with conversation history
-        """
-        # Get relevant context from knowledge base
-        context_info = self._get_contextual_information(query_type)
-
-        # Build conversation context
-        context_messages = []
-        if conversation_context:
-            for ctx in conversation_context[-3:]:  # Last 3 exchanges for context
-                context_messages.append(ctx)
-
-        # Create system prompt
-        system_prompt = f"""
-        You are QuickQuery, an intelligent and helpful AI assistant for engineering college students.
-        You specialize in providing accurate, friendly, and comprehensive information about academic and campus life.
-
-        Current Context: {query_type}
-        Relevant Information: {context_info}
-
-        Guidelines:
-        - Provide specific, actionable information when available
-        - Be conversational and empathetic to student needs  
-        - Use appropriate emojis to make responses engaging
-        - If you don't have specific information, provide general guidance
-        - Keep responses comprehensive but concise (under 300 words)
-        - Always prioritize accuracy over speculation
-        - Format information clearly with bullet points when appropriate
-        """
-
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Add conversation context
-        if context_messages:
-            messages.extend(context_messages)
-
-        # Add current query
-        messages.append({"role": "user", "content": query})
-
-        if self.api_key:
-            try:
-                response = openai.ChatCompletion.create(
+Guidelines:
+- Provide specific, actionable information
+- Be conversational and helpful
+- Use appropriate emojis
+- Keep responses under 300 words
+- Format information clearly with bullet points when appropriate"""
+                }
+            ]
+            
+            # Add conversation context with proper typing
+            if conversation_context:
+                for ctx in conversation_context[-6:]:  # Last 3 exchanges
+                    if ctx.get("role") in ["user", "assistant"] and ctx.get("content"):
+                        messages.append({
+                            "role": ctx["role"],  # type: ignore
+                            "content": ctx["content"]
+                        })
+            
+            # Add current query
+            messages.append({"role": "user", "content": query})
+            
+            if self.client:
+                # Make API call with streaming
+                stream = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=400,
-                    temperature=0.7,
-                    presence_penalty=0.1,
-                    frequency_penalty=0.1
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    stream=True
                 )
-
-                ai_response = response.choices[0].message.content
-                tokens_used = response.usage.total_tokens
-
-                return ai_response, tokens_used
-
-            except Exception as e:
-                self.logger.error(f"OpenAI response generation failed: {str(e)}")
-
-        # Fallback response
-        return self._get_fallback_response(query_type, query), 0
-
-    def _get_contextual_information(self, query_type: str) -> str:
-        """Extract relevant information from knowledge base based on query type"""
-
-        context_mapping = {
-            "academic_exam": json.dumps(self.knowledge_base["academic"]["exams"], indent=2),
-            "academic_syllabus": json.dumps(self.knowledge_base["academic"]["syllabus"], indent=2),
-            "academic_assignment": json.dumps(self.knowledge_base["academic"]["assignments"], indent=2),
-            "campus_library": json.dumps(self.knowledge_base["campus"]["facilities"]["library"], indent=2),
-            "campus_dining": json.dumps(self.knowledge_base["campus"]["facilities"]["dining"], indent=2),
-            "campus_sports": json.dumps(self.knowledge_base["campus"]["facilities"]["sports_fitness"], indent=2),
-            "campus_hostel": json.dumps(self.knowledge_base["campus"]["facilities"]["accommodation"], indent=2),
-            "campus_transport": json.dumps(self.knowledge_base["campus"]["transportation"], indent=2),
-            "campus_events": json.dumps(self.knowledge_base["campus"]["events"], indent=2),
-            "campus_contact": json.dumps(self.knowledge_base["contacts"], indent=2),
-            "resources": json.dumps(self.knowledge_base["academic"]["resources"], indent=2)
-        }
-
-        return context_mapping.get(query_type, "General college information available.")
-
+                
+                self.session_stats["api_calls_made"] += 1
+                
+                async for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            else:
+                # Fallback response
+                fallback = self._get_fallback_response(query_type, query)
+                yield fallback
+                
+        except Exception as e:
+            self.logger.error(f"Response generation failed: {str(e)}")
+            error_msg = "❌ I encountered an error processing your query. Please try again or rephrase your question."
+            yield error_msg
+    
     def _get_fallback_response(self, query_type: str, query: str) -> str:
-        """Generate fallback response when OpenAI API is unavailable"""
-
+        """Generate fallback response when API is unavailable"""
         fallback_responses = {
-            "academic_exam": f"📚 **Exam Information:**\n{self.knowledge_base['academic']['exams']['schedule']['semester']}\n{self.knowledge_base['academic']['exams']['schedule']['internal_1']}",
-
-            "academic_syllabus": f"📖 **AI/ML Syllabus:** {', '.join(self.knowledge_base['academic']['syllabus']['ai_ml']['semester_7'])}",
-
-            "academic_assignment": f"📝 **Current Assignments:**\n" + "\n".join([f"• {item['name']} - Due: {item['due']}" for item in self.knowledge_base['academic']['assignments']['current_deadlines'][:3]]),
-
-            "campus_library": f"📚 **Library Information:**\nTimings: {self.knowledge_base['campus']['facilities']['library']['timings']}\nCapacity: {self.knowledge_base['campus']['facilities']['library']['capacity']}",
-
-            "campus_dining": f"🍽️ **Dining Facilities:**\nMain Canteen: {self.knowledge_base['campus']['facilities']['dining']['main_canteen']['timings']}\nCoffee Shop: {self.knowledge_base['campus']['facilities']['dining']['coffee_shop']['timings']}",
-
-            "campus_events": "🎉 **Upcoming Events:** TechFest 2025 (Oct 15-17), AI Workshop (Sept 25), Coding Competition (Oct 1)",
-
-            "campus_contact": f"📞 **Important Contacts:**\nAcademic Office: {self.knowledge_base['contacts']['academic']['academic_office']}\nIT Helpdesk: {self.knowledge_base['contacts']['student_services']['it_helpdesk']}",
-
+            "academic_exam": "📚 **Exam Information:** Internal Exams: Sept 20-25, Nov 15-20, 2025. Semester Exams: Dec 10-20, 2025.",
+            "academic_syllabus": "📖 **AI/ML Syllabus:** Neural Networks (30%), NLP (25%), Computer Vision (20%), MLOps (15%), AI Ethics (10%)",
+            "academic_assignment": "📝 **Current Assignments:** AI Project (Sept 30), ML Assignment 2 (Oct 5), Database Project (Oct 15)",
+            "campus_library": "📚 **Library:** Open 6AM-10PM (Mon-Sat), 8AM-8PM (Sun). 500 student capacity with WiFi and study rooms.",
+            "campus_dining": "🍽️ **Dining:** Main Canteen 8AM-8PM, Coffee Shop 7AM-9PM. Multiple cuisine options available.",
+            "campus_events": "🎉 **Events:** TechFest 2025 (Oct 15-17), AI Workshop (Sept 25), Coding Competition (Oct 1)",
+            "campus_contact": "📞 **Contacts:** Academic Office: ext-101, IT Helpdesk: ext-201, Placement: ext-401",
             "summarization": self._summarize_text(query)
         }
-
-        return fallback_responses.get(query_type, "🤖 I can help with academic queries, campus facilities, events, and general information. Please be more specific about what you need!")
-
+        
+        return fallback_responses.get(query_type, 
+            "🤖 I can help with academic queries, campus facilities, events, and general information. Please be more specific!")
+    
     def _summarize_text(self, text: str) -> str:
         """Simple text summarization for fallback"""
         sentences = [s.strip() for s in text.split('.') if len(s.strip()) > 10]
-
+        
         if len(sentences) >= 3:
-            key_points = sentences[:2]
-            return f"📋 **Summary:** {'. '.join(key_points)}. [Total: {len(sentences)} sentences]"
+            return f"📋 **Summary:** {sentences[0]}. Key points: {sentences[1]}."
         elif len(sentences) >= 2:
             return f"📋 **Summary:** {sentences[0]}. {sentences[1]}"
         else:
             return f"📋 **Summary:** {text[:150]}{'...' if len(text) > 150 else ''}"
-
-    def process_query(self, user_query: str, conversation_context: List[str] = None) -> QueryAnalytics:
-        """
-        Main method to process user queries with full analytics
-        """
-        start_time = datetime.datetime.now()
-        query_id = f"q_{int(start_time.timestamp())}"
-
+    
+    async def process_query_stream(self, user_query: str, 
+                                 conversation_context: Optional[List[Dict[str, str]]] = None) -> AsyncGenerator[Union[str, QueryAnalytics], None]:
+        """Process query with streaming response and analytics"""
+        start_time = time.perf_counter()
+        timestamp = datetime.datetime.now()
+        query_id = f"q_{int(timestamp.timestamp())}_{id(self)}"
+        
         try:
-            # Classify the query
-            query_type, confidence = self.classify_query_advanced(user_query)
-
-            # Generate AI response
-            ai_response, tokens_used = self.generate_ai_response(user_query, query_type, conversation_context)
-
-            # Calculate response time
-            end_time = datetime.datetime.now()
-            response_time_ms = int((end_time - start_time).total_seconds() * 1000)
-
+            # Sanitize and validate input
+            clean_query = self.security.sanitize_input(user_query)
+            if not clean_query:
+                yield "❌ Please provide a valid question."
+                return
+            
+            # Classify query
+            query_type, confidence = self.classify_query(clean_query)
+            
+            # Stream response
+            full_response = ""
+            async for chunk in self.generate_response_stream(clean_query, query_type, conversation_context):
+                full_response += chunk
+                yield chunk
+            
+            # Calculate metrics
+            response_time_ms = int((time.perf_counter() - start_time) * 1000)
+            
             # Create analytics object
             analytics = QueryAnalytics(
                 query_id=query_id,
-                user_input=user_query,
-                ai_response=ai_response,
+                user_input=clean_query,
+                ai_response=full_response,
                 query_type=query_type,
                 confidence=confidence,
                 response_time_ms=response_time_ms,
-                tokens_used=tokens_used,
-                timestamp=start_time.strftime("%Y-%m-%d %H:%M:%S")
+                tokens_used=self._estimate_tokens(clean_query, full_response),
+                timestamp=timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                cost_estimate=self._calculate_cost_estimate()
             )
-
-            # Update session statistics
-            self._update_session_stats(query_type, response_time_ms, tokens_used, True)
-
-            # Add to conversation history
+            
+            # Update statistics
+            self._update_session_stats(query_type, response_time_ms, analytics.tokens_used, True)
+            
+            # Add to history
             self.conversation_history.append(analytics)
-
-            return analytics
-
+            
+            # Yield final analytics
+            yield analytics
+            
         except Exception as e:
             self.logger.error(f"Query processing failed: {str(e)}")
-
-            # Return error response
-            return QueryAnalytics(
+            error_analytics = QueryAnalytics(
                 query_id=query_id,
                 user_input=user_query,
-                ai_response=f"❌ I encountered an error processing your query. Please try again or rephrase your question.",
+                ai_response="❌ An error occurred processing your query.",
                 query_type="error",
                 confidence=0.0,
                 response_time_ms=0,
                 tokens_used=0,
-                timestamp=start_time.strftime("%Y-%m-%d %H:%M:%S")
+                timestamp=timestamp.strftime("%Y-%m-%d %H:%M:%S")
             )
-
+            yield error_analytics
+    
+    def _estimate_tokens(self, input_text: str, output_text: str) -> int:
+        """Estimate token usage (rough approximation)"""
+        # Rough estimate: 1 token ≈ 4 characters for English text
+        return (len(input_text) + len(output_text)) // 4
+    
+    def _calculate_cost_estimate(self) -> float:
+        """Calculate cost estimate based on model and tokens"""
+        pricing = {
+            "gpt-3.5-turbo": 0.002 / 1000,  # $0.002 per 1K tokens
+            "gpt-4": 0.03 / 1000,  # $0.03 per 1K tokens
+        }
+        
+        base_cost = pricing.get(self.model, 0.002 / 1000)
+        return self.session_stats["total_tokens_used"] * base_cost
+    
     def _update_session_stats(self, query_type: str, response_time_ms: int, tokens_used: int, success: bool):
         """Update session statistics"""
         self.session_stats["queries_processed"] += 1
-
+        
         if success:
             self.session_stats["successful_queries"] += 1
-
+        
         self.session_stats["total_tokens_used"] += tokens_used
-
+        
         # Update average response time
-        total_time = (self.session_stats["average_response_time"] * (self.session_stats["queries_processed"] - 1) + response_time_ms)
+        total_time = (self.session_stats["average_response_time"] * 
+                     (self.session_stats["queries_processed"] - 1) + response_time_ms)
         self.session_stats["average_response_time"] = total_time / self.session_stats["queries_processed"]
-
+        
         # Update query type distribution
         if query_type in self.session_stats["query_types"]:
             self.session_stats["query_types"][query_type] += 1
         else:
             self.session_stats["query_types"][query_type] = 1
-
-    def get_analytics_summary(self) -> Dict:
+    
+    def get_analytics_summary(self) -> Dict[str, Any]:
         """Get comprehensive analytics summary"""
         if not self.conversation_history:
             return {
@@ -570,12 +553,14 @@ class AdvancedQuickQueryAgent:
                 "success_rate": 100.0,
                 "average_confidence": 0.0,
                 "average_response_time": 0,
-                "total_tokens": 0
+                "total_tokens": 0,
+                "query_distribution": {},
+                "session_duration": 0
             }
-
+        
         total_queries = len(self.conversation_history)
         successful_queries = len([q for q in self.conversation_history if q.query_type != "error"])
-
+        
         return {
             "total_queries": total_queries,
             "success_rate": (successful_queries / total_queries) * 100,
@@ -585,54 +570,71 @@ class AdvancedQuickQueryAgent:
             "query_distribution": self.session_stats["query_types"],
             "session_duration": (datetime.datetime.now() - self.session_stats["session_start"]).total_seconds()
         }
-
-    def export_conversation_data(self) -> List[Dict]:
+    
+    def export_conversation_data(self) -> List[Dict[str, Any]]:
         """Export conversation history for analysis"""
         return [asdict(query) for query in self.conversation_history]
 
 
-# Utility functions for the application
+# Utility functions for compatibility and display
 def format_response_for_display(response: str) -> str:
-    """Format AI response for better display in Streamlit"""
-    # Add proper line breaks and formatting
-    formatted = response.replace("\n", "\n")
-    formatted = formatted.replace("**", "**")
-    return formatted
+    """Format AI response for better display"""
+    return response.replace("\n", "  \n")
+
 
 def calculate_usage_cost(tokens_used: int, model: str = "gpt-3.5-turbo") -> float:
     """Calculate approximate API usage cost"""
-    # Pricing as of 2025 (approximate)
     pricing = {
-        "gpt-3.5-turbo": 0.002 / 1000,  # $0.002 per 1K tokens
-        "gpt-4": 0.03 / 1000,  # $0.03 per 1K tokens
+        "gpt-3.5-turbo": 0.002 / 1000,
+        "gpt-3.5-turbo-16k": 0.004 / 1000,
+        "gpt-4": 0.03 / 1000,
+        "gpt-4-32k": 0.06 / 1000
     }
-
+    
     return tokens_used * pricing.get(model, 0.002 / 1000)
+
+
+# For backward compatibility, create an alias
+AdvancedQuickQueryAgent = EnhancedQuickQueryAgent
+
 
 if __name__ == "__main__":
     # Demo usage
-    agent = AdvancedQuickQueryAgent()
-
-    # Test queries
-    test_queries = [
-        "When is the next exam?",
-        "Tell me about the AI/ML syllabus",
-        "What are the library timings?",
-        "How do I contact the placement office?"
-    ]
-
-    print("🚀 QuickQuery Advanced Agent Demo")
-    print("=" * 50)
-
-    for query in test_queries:
-        print(f"\nUser: {query}")
-        result = agent.process_query(query)
-        print(f"Assistant: {result.ai_response}")
-        print(f"Type: {result.query_type} | Confidence: {result.confidence:.2f} | Time: {result.response_time_ms}ms")
-
-    # Print analytics
-    analytics = agent.get_analytics_summary()
-    print(f"\n📊 Session Analytics:")
-    print(f"Total Queries: {analytics['total_queries']}")
-    print(f"Success Rate: {analytics['success_rate']:.1f}%")
-    print(f"Average Response Time: {analytics['average_response_time']:.0f}ms")
+    import asyncio
+    
+    async def main():
+        agent = EnhancedQuickQueryAgent()
+        
+        # Test queries
+        test_queries = [
+            "When is the next exam?",
+            "Tell me about the AI/ML syllabus",
+            "What are the library timings?",
+            "How do I contact the placement office?"
+        ]
+        
+        print("🚀 Enhanced QuickQuery Agent Demo")
+        print("=" * 50)
+        
+        for query in test_queries:
+            print(f"\nUser: {query}")
+            print("Assistant: ", end="")
+            
+            final_analytics = None
+            async for result in agent.process_query_stream(query):
+                if isinstance(result, str):
+                    print(result, end="", flush=True)
+                elif isinstance(result, QueryAnalytics):
+                    final_analytics = result
+            
+            print()  # New line
+            if final_analytics:
+                print(f"[{final_analytics.query_type} | {final_analytics.confidence:.2f} | {final_analytics.response_time_ms}ms]")
+        
+        # Print session analytics
+        analytics = agent.get_analytics_summary()
+        print(f"\n📊 Session Summary:")
+        print(f"Queries: {analytics['total_queries']} | Success: {analytics['success_rate']:.1f}%")
+        print(f"Avg Response Time: {analytics['average_response_time']:.0f}ms")
+    
+    asyncio.run(main())

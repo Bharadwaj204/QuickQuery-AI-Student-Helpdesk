@@ -156,7 +156,7 @@ class AuthManager:
                 else:
                     if self.login(username, password):
                         st.success("✅ Login successful! Redirecting...")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("❌ Invalid credentials. Please try again.")
         
@@ -186,4 +186,4 @@ def get_current_user():
 def logout():
     """Logout current user"""
     auth_manager.logout()
-    st.experimental_rerun()
+    st.rerun()
